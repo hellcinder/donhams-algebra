@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Algebra Tutor — Full App (Inline)</title>
+  <title>Algebra Tutor — Full App (Graph Fixed)</title>
   <meta name="theme-color" content="#0b5fff" />
   <style>
     :root { --bg:#fff; --fg:#111; --muted:#606770; --brand:#0b5fff; }
@@ -23,6 +23,9 @@
     .right { text-align:right }
     .mb8 { margin-bottom:8px }
     .mt8 { margin-top:8px }
+
+    /* Graph: pin the height so it never grows between renders */
+    #progressChart { display:block; width:100%; height:240px; }
   </style>
 </head>
 <body>
@@ -80,7 +83,8 @@
 
       <div class="card">
         <h3>Graphs</h3>
-        <canvas id="progressChart" height="220"></canvas>
+        <!-- Removed the height attribute (CSS controls it) -->
+        <canvas id="progressChart"></canvas>
         <div class="right mt8"><button id="refreshChart">Refresh</button></div>
       </div>
     </section>
@@ -95,7 +99,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
 
-  <!-- Inline app.js (full app) -->
+  <!-- Inline app.js (with stronger chart reset) -->
   <script defer>
     'use strict';
     const $ = sel => document.querySelector(sel);
@@ -321,16 +325,36 @@
 
     function drawChart(){
       const canvas=document.getElementById('progressChart'); if(!canvas || !window.Chart) return;
+
+      // 1) Destroy any existing chart instance (works in Chart.js v3/v4)
+      const existing = Chart.getChart ? Chart.getChart(canvas) : __chart;
+      if (existing && typeof existing.destroy === 'function') existing.destroy();
+
+      // 2) Hard reset the canvas buffer to the CSS size to avoid growth across renders
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight; // fixed by CSS (#progressChart height)
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d'); if (ctx) ctx.clearRect(0,0,w,h);
+
+      // 3) Prepare data
       const labels=[], values=[];
       for(const [mid,mod] of Object.entries(LESSONS)){
         for(const L of mod.items){ labels.push(`${mid}:${L.id}`); values.push(lessonBest(progress, mid, L.id)*100); }
       }
-      if (Chart.getChart) {
-        const existing=Chart.getChart(canvas);
-        if(existing) existing.destroy();
-      }
-      if (__chart && typeof __chart.destroy==='function'){ try{ __chart.destroy(); }catch{} __chart=null; }
-      __chart=new Chart(canvas,{ type:'bar', data:{ labels, datasets:[{label:'Best Score %', data:values}] }, options:{ scales:{y:{min:0,max:100}}, plugins:{legend:{display:false}}, responsive:true, maintainAspectRatio:false } });
+
+      // 4) Recreate chart without changing layout
+      __chart = new Chart(canvas,{
+        type:'bar',
+        data:{ labels, datasets:[{ label:'Best Score %', data:values }]},
+        options:{
+          responsive:true,
+          maintainAspectRatio:false, /* we rely on fixed CSS height */
+          animation:false,
+          scales:{ y:{ beginAtZero:true, min:0, max:100 } },
+          plugins:{ legend:{ display:false } }
+        }
+      });
     }
 
     function initUI(){
@@ -355,6 +379,7 @@
       $('#refreshChart').onclick=drawChart;
 
       drawChart();
+      window.addEventListener('resize', ()=>{ /* keep buffer in sync on resize */ drawChart(); });
     }
     window.addEventListener('DOMContentLoaded', initUI);
 
