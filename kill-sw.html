@@ -1,0 +1,32 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Kill Service Worker</title></head>
+<body>
+<h1>Service Worker Unregister</h1>
+<pre id="log">Working...</pre>
+<script>
+(async () => {
+  const log = (m)=>document.getElementById('log').textContent += "\n" + m;
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      log("Found " + regs.length + " registrations");
+      for (const r of regs) {
+        log("Unregistering " + (r.scope || 'scope'));
+        await r.unregister();
+      }
+    } else {
+      log("navigator.serviceWorker not supported");
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      log("Cache keys: " + JSON.stringify(keys));
+      await Promise.all(keys.map(k => caches.delete(k)));
+      log("Caches cleared.");
+    }
+    log("Done. Reload the main page.");
+  } catch (e) {
+    log("Error: " + e);
+  }
+})();
+</script>
+</body></html>

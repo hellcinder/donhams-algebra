@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JS Smoke Test</title>
+<style>body{font:16px system-ui;margin:2rem}code{background:#f4f4f4;padding:.2rem .4rem;border-radius:.25rem}</style>
+</head><body>
+<h1>JS Smoke Test</h1>
+<p id="status">Checking…</p>
+<script>
+  document.getElementById('status').textContent = "✅ JS is running @ " + new Date().toLocaleString();
+  const btn = document.createElement('button');
+  btn.textContent = "Click me";
+  btn.onclick = () => alert("If you see this, JS is definitely running.");
+  document.body.appendChild(btn);
+</script>
+<p>If this page reads <code>✅ JS is running</code> and the button works, your GitHub Pages is serving JavaScript correctly.</p>
+</body></html>
