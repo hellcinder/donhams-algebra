@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Algebra Tutor — Full App (Graph Fixed)</title>
+  <title>Algebra Tutor — No Graph</title>
   <meta name="theme-color" content="#0b5fff" />
   <style>
     :root { --bg:#fff; --fg:#111; --muted:#606770; --brand:#0b5fff; }
@@ -23,9 +23,6 @@
     .right { text-align:right }
     .mb8 { margin-bottom:8px }
     .mt8 { margin-top:8px }
-
-    /* Graph: pin the height so it never grows between renders */
-    #progressChart { display:block; width:100%; height:240px; }
   </style>
 </head>
 <body>
@@ -80,13 +77,6 @@
         </div>
         <p id="pdfHint" class="muted mt8">PDF export uses jsPDF; works offline once cached.</p>
       </div>
-
-      <div class="card">
-        <h3>Graphs</h3>
-        <!-- Removed the height attribute (CSS controls it) -->
-        <canvas id="progressChart"></canvas>
-        <div class="right mt8"><button id="refreshChart">Refresh</button></div>
-      </div>
     </section>
 
     <section class="card">
@@ -95,11 +85,10 @@
     </section>
   </main>
 
-  <!-- Libs -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <!-- Libs (Chart.js removed) -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
 
-  <!-- Inline app.js (with stronger chart reset) -->
+  <!-- Inline app.js (graph-related code removed) -->
   <script defer>
     'use strict';
     const $ = sel => document.querySelector(sel);
@@ -218,7 +207,7 @@
       'proportion':['Proportion solving', gen_proportion]
     };
 
-    let currentStudent=null, progress=null, __chart=null;
+    let currentStudent=null, progress=null;
 
     function fillSelect(sel, items){
       const el=$(sel); el.innerHTML='';
@@ -234,7 +223,7 @@
       $('#lessonIntro').innerHTML=`<div class="muted"><b>Objectives:</b> ${L.objectives.join('; ')}<br><b>Notes:</b> ${L.notes}</div>`;
     }
 
-    function switchStudent(name){ currentStudent=name; progress=getProgress(currentStudent); updateStorageInfo(); drawChart(); }
+    function switchStudent(name){ currentStudent=name; progress=getProgress(currentStudent); updateStorageInfo(); }
     function updateStorageInfo(){ const bytes=(localStorage.getItem(LS_KEY(currentStudent))||'').length; $('#storageInfo').textContent=`Local save: ${(bytes/1024).toFixed(1)} KB`; }
     function setTitle(t){ $('#activityTitle').textContent=t; }
 
@@ -265,7 +254,6 @@
         const pct=total?Math.round(100*correct/total):0;
         const passed=(correct/total)>=PASS;
         $('#activity').innerHTML = `<div class="card">Lesson score: <b>${correct}/${total} = ${pct}%</b><br>${passed? '🎉 Mastery achieved!' : '📈 Keep practicing to improve.'}</div>`;
-        drawChart();
       });
     }
 
@@ -297,7 +285,7 @@
             <div id="feedback" class="mt8 muted"></div>
           </div>`;
         const area=$('#answerArea');
-        let getVal=()=>'';
+        let getVal=()=>''; 
         if(q.type==='mcq'){
           const letters='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
           area.innerHTML=q.options.map((opt,idx)=>`<label class="row"><input type="radio" name="opt" value="${opt}"> ${letters[idx]}. ${opt}</label>`).join('');
@@ -323,40 +311,6 @@
       render();
     }
 
-    function drawChart(){
-      const canvas=document.getElementById('progressChart'); if(!canvas || !window.Chart) return;
-
-      // 1) Destroy any existing chart instance (works in Chart.js v3/v4)
-      const existing = Chart.getChart ? Chart.getChart(canvas) : __chart;
-      if (existing && typeof existing.destroy === 'function') existing.destroy();
-
-      // 2) Hard reset the canvas buffer to the CSS size to avoid growth across renders
-      const w = canvas.clientWidth;
-      const h = canvas.clientHeight; // fixed by CSS (#progressChart height)
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d'); if (ctx) ctx.clearRect(0,0,w,h);
-
-      // 3) Prepare data
-      const labels=[], values=[];
-      for(const [mid,mod] of Object.entries(LESSONS)){
-        for(const L of mod.items){ labels.push(`${mid}:${L.id}`); values.push(lessonBest(progress, mid, L.id)*100); }
-      }
-
-      // 4) Recreate chart without changing layout
-      __chart = new Chart(canvas,{
-        type:'bar',
-        data:{ labels, datasets:[{ label:'Best Score %', data:values }]},
-        options:{
-          responsive:true,
-          maintainAspectRatio:false, /* we rely on fixed CSS height */
-          animation:false,
-          scales:{ y:{ beginAtZero:true, min:0, max:100 } },
-          plugins:{ legend:{ display:false } }
-        }
-      });
-    }
-
     function initUI(){
       const roster=getRoster(); currentStudent=roster[0]; progress=getProgress(currentStudent);
       fillSelect('#studentSelect', roster.map(n=>({value:n,label:n}))); $('#studentSelect').value=currentStudent; updateStorageInfo();
@@ -376,10 +330,6 @@
       $('#startPractice').onclick=startPractice;
       $('#downloadTxt').onclick=()=>downloadWorksheet(false);
       $('#downloadPdf').onclick=()=>downloadWorksheet(true);
-      $('#refreshChart').onclick=drawChart;
-
-      drawChart();
-      window.addEventListener('resize', ()=>{ /* keep buffer in sync on resize */ drawChart(); });
     }
     window.addEventListener('DOMContentLoaded', initUI);
 
@@ -395,12 +345,8 @@
       const problems=[], answers=[];
       for(let i=0;i<n;i++){ const q=gen(); const p=q.prompt.replace(' (give the smaller root)',''); problems.push(`${i+1}. ${p}`); answers.push(`${i+1}. ${q.answer}`); }
       if(!asPdf){
-        downloadText(`worksheet_${key}_${n}.txt`, `Algebra Worksheet - ${name}
-
-${problems.join('\n')}`);
-        downloadText(`worksheet_${key}_${n}_answers.txt`, `Answer Key - ${name}
-
-${answers.join('\n')}`);
+        downloadText(`worksheet_${key}_${n}.txt`, `Algebra Worksheet - ${name}\n\n${problems.join('\n')}`);
+        downloadText(`worksheet_${key}_${n}_answers.txt`, `Answer Key - ${name}\n\n${answers.join('\n')}`);
         return;
       }
       if(!window.jspdf){ alert('jsPDF not available yet. Open once online to cache.'); return; }
