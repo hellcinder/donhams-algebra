@@ -3,14 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Algebra Tutor — No Graph</title>
+  <title>Algebra Tutor — Student/Teacher + Rich Explain</title>
   <meta name="theme-color" content="#0b5fff" />
   <style>
-    :root { --bg:#fff; --fg:#111; --muted:#606770; --brand:#0b5fff; }
+    :root { --bg:#fff; --fg:#111; --muted:#606770; --brand:#0b5fff; --card:#f7f9fc; }
     * { box-sizing:border-box }
     body { margin:0; font: 16px system-ui, -apple-system, Segoe UI, Roboto, Helvetica; color:var(--fg); background:var(--bg); }
-    header { padding:12px 16px; background:var(--brand); color:#fff; position:sticky; top:0; z-index:10 }
-    h1 { margin:0; font-size:20px; }
+    header { padding:12px 16px; background:var(--brand); color:#fff; position:sticky; top:0; z-index:10; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+    header h1 { margin:0; font-size:20px; }
+    .mode { display:flex; align-items:center; gap:8px; }
+    .pill { display:inline-block; padding:2px 10px; border-radius:999px; background:#ffffff20; color:#fff; font-weight:600; font-size:12px; }
+    .btn-lite { padding:8px 10px; border-radius:999px; border:1px solid #ffffff60; background:#ffffff10; color:#fff; cursor:pointer; }
     main { padding:16px; max-width:960px; margin:0 auto; }
     .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
     button, select, input[type=text], input[type=number] { padding:10px 12px; border:1px solid #ccc; border-radius:10px; background:#fff; }
@@ -18,23 +21,37 @@
     button.primary { background:var(--brand); color:#fff; border:none; }
     .card { border:1px solid #ddd; border-radius:12px; padding:12px; margin:12px 0; box-shadow:0 1px 3px rgba(0,0,0,.06); }
     .muted { color:var(--muted); }
-    .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#eef3ff; color:#0b5fff; font-weight:600; font-size:12px; }
     .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:12px; }
-    .right { text-align:right }
     .mb8 { margin-bottom:8px }
     .mt8 { margin-top:8px }
+
+    /* Explain block styles */
+    .explain { background:var(--card); border-radius:12px; padding:10px 12px; }
+    .explain h4 { margin:6px 0 4px; font-size:15px; }
+    .explain ol { margin:6px 0 0 18px; }
+    .explain li { margin:4px 0; }
+    .explain code { background:#eef; padding:0 6px; border-radius:6px; }
+    .tip { background:#fff8e6; border:1px solid #f1d48a; border-radius:10px; padding:8px 10px; margin-top:8px; }
+    details.ex { background:#fff; border:1px dashed #cbd5e1; border-radius:10px; padding:8px 10px; margin-top:8px; }
+    details.ex summary { cursor:pointer; }
   </style>
 </head>
 <body>
-  <header><h1>Algebra Tutor</h1></header>
+  <header>
+    <h1>Algebra Tutor</h1>
+    <div class="mode">
+      <span id="modeBadge" class="pill">Mode</span>
+      <button id="toggleMode" class="btn-lite">Switch View</button>
+    </div>
+  </header>
   <main>
-    <section class="card">
+    <section class="card" id="rosterCard">
       <div class="row">
-        <span class="pill">Student</span>
+        <span class="pill" style="background:#eef3ff;color:#0b5fff;">Student</span>
         <select id="studentSelect"></select>
-        <button id="addStudentBtn">Add Student</button>
-        <button id="delStudentBtn">Delete</button>
-        <span class="muted" id="storageInfo"></span>
+        <button id="addStudentBtn" class="teacherOnly">Add Student</button>
+        <button id="delStudentBtn" class="teacherOnly">Delete</button>
+        <span class="muted teacherOnly" id="storageInfo"></span>
       </div>
     </section>
 
@@ -65,7 +82,7 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card teacherOnly">
         <h3>Teacher Mode</h3>
         <div class="row mb8">
           <select id="worksheetTopic"></select>
@@ -85,10 +102,8 @@
     </section>
   </main>
 
-  <!-- Libs (Chart.js removed) -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
 
-  <!-- Inline app.js (graph-related code removed) -->
   <script defer>
     'use strict';
     const $ = sel => document.querySelector(sel);
@@ -96,13 +111,19 @@
     function randInt(a,b){ return (Math.random()*(b-a+1)|0)+a; }
     function gcd(a,b){ a=Math.abs(a); b=Math.abs(b); while(b){ [a,b]=[b,a%b] } return a||1 }
     function simplifyFraction(n,d){ const g=gcd(n,d); const s=(d<0?-1:1); return [s*n/g, Math.abs(d)/g]; }
-    function F(n,d){ const [nn,dd]=simplifyFraction(n,d); return dd===1? String(nn): `${nn}/${dd}`; }
+    function F(n,d){ const [nn,dd]=simplifyFraction(n,d); return dd===1? String(nn): \`\${nn}/\${dd}\`; }
     function fracToNumber(s){ if(typeof s==='number')return s; if(typeof s!=='string')return NaN; s=s.trim(); if(s.includes('/')){ const [n,d]=s.split('/').map(Number); return n/d; } return Number(s); }
     function approxEqual(a,b,tol=1e-3){ return Math.abs(fracToNumber(a)-fracToNumber(b))<=tol; }
     function shuffle(arr){ return arr.map(v=>[Math.random(),v]).sort((a,b)=>a[0]-b[0]).map(x=>x[1]); }
 
+    // URL mode
+    const params = new URLSearchParams(location.search);
+    const isStudent = (params.get('mode')||'').toLowerCase()==='student' || (location.hash||'').toLowerCase().includes('student');
+    const forcedStudentName = params.get('student');
+
+    // Storage
     const RKEY='algebra_roster';
-    const LS_KEY=(student)=>`algebra_progress_${student||'Learner'}`;
+    const LS_KEY=(student)=>\`algebra_progress_\${student||'Learner'}\`;
     function getRoster(){ try{return JSON.parse(localStorage.getItem(RKEY))||['Learner'];}catch{return ['Learner'];} }
     function setRoster(list){ localStorage.setItem(RKEY, JSON.stringify([...new Set(list)])); }
     function getProgress(student){ try{return JSON.parse(localStorage.getItem(LS_KEY(student)))||{user:student,modules:{}};}catch{return {user:student,modules:{}};} }
@@ -110,22 +131,151 @@
     function lessonBest(p,mid,lid){ try{return p.modules[mid].lessons[lid].best||0;}catch{return 0;} }
     function recordScore(p,mid,lid,correct,total){ const score=total?correct/total:0; p.modules[mid]=p.modules[mid]||{lessons:{}}; const L=p.modules[mid].lessons[lid]=p.modules[mid].lessons[lid]||{best:0,history:[]}; L.history.push({correct,total,ts:Date.now()}); L.best=Math.max(L.best,score); saveProgress(p); }
 
-    const gen_linear_eq=()=>{ const a=[2,3,4,5,6,7,8,9][randInt(0,7)], x=randInt(-6,6), b=randInt(-9,9), c=a*x+b; const ans=F(c-b,a);
-      return {prompt:`Solve for x: ${a}x + ${b} = ${c}`, type:'numeric', answer:ans, hint:'Undo addition/subtraction, then division.', solution:`${a}x=${c-b}; x=(${c-b})/${a}=${ans}` }; };
-    const gen_slope=()=>{ let x1=randInt(-6,6),y1=randInt(-6,6),x2=x1,y2=y1; while(x2===x1)x2=randInt(-6,6); y2=randInt(-6,6); const ans=F(y2-y1,x2-x1);
-      return {prompt:`Find the slope through (${x1}, ${y1}) and (${x2}, ${y2}).`, type:'numeric', answer:ans, hint:'m=(y2−y1)/(x2−x1)', solution:`m=(${y2}-${y1})/(${x2}-${x1})=${ans}`}; };
-    const gen_percent=()=>{ const base=[40,50,60,80,100,120][randInt(0,5)], pct=[5,10,12,15,20,25][randInt(0,5)], nv=base*(1+pct/100);
-      return {prompt:`A price is $${base} and increases by ${pct}%. What is the new price?`, type:'numeric', answer:String(nv), hint:'Multiply by (1+percent).', solution:`New=${base}*(1+${pct}/100)=${nv}`}; };
-    const gen_exponent_rules=()=>{ let a=randInt(1,5),b=randInt(1,5);
-      if(Math.random()<0.5){ const ans=`x^${a+b}`; const opts=[ans,`x^${a*b}`,`x^${a-b-1}`,`x^${a+b+1}`];
-        return {prompt:`Simplify: x^${a} * x^${b}`, type:'mcq', answer:ans, options:shuffle(opts), hint:'Add exponents.', solution:'Same base multiply → add exponents.'}; }
-      else { if(a<b)[a,b]=[b,a]; const ans=`x^${a-b}`; const opts=[ans,`x^${a*b}`,`x^${a-b-1}`,`x^${a+b+1}`];
-        return {prompt:`Simplify: x^${a} / x^${b}`, type:'mcq', answer:ans, options:shuffle(opts), hint:'Subtract exponents.', solution:'Same base divide → subtract exponents.'}; } };
-    const gen_quadratic_roots=()=>{ const choices=[-5,-4,-3,-2,-1,1,2,3,4,5], p=choices[randInt(0,choices.length-1)], q=choices[randInt(0,choices.length-1)]; const b=p+q,c=p*q; const r1=-p,r2=-q,small=Math.min(r1,r2);
-      return {prompt:`Solve x^2 + ${b}x + ${c} = 0 (give the smaller root)`, type:'numeric', answer:String(small), hint:'Find two numbers that multiply to c and add to b.', solution:`(x+${p})(x+${q})=0 → x=${-p} or ${-q}`}; };
-    const gen_proportion=()=>{ const a=randInt(2,9),b=randInt(2,9),c=randInt(2,9), num=b*c, den=a, ans=F(num,den);
-      return {prompt:`Solve for x: ${a}/${b} = ${c}/x`, type:'numeric', answer:ans, hint:'Cross-multiply.', solution:`${a}x=${b}·${c} → x=${num}/${den}=${ans}`}; };
+    // Helpers
+    function code(x){ return '<code>'+x+'</code>'; }
 
+    // Generators (tag each with kind + meta for Explain)
+    const gen_linear_eq=()=>{
+      const a=[2,3,4,5,6,7,8,9][randInt(0,7)], x=randInt(-6,6), b=randInt(-9,9), c=a*x+b;
+      const ans=F(c-b,a);
+      return {kind:'linear_eq', meta:{a,b,c}, prompt:\`Solve for x: \${a}x + \${b} = \${c}\`, type:'numeric', answer:ans, hint:'Undo addition/subtraction, then division.', solution:\`\${a}x=\${c-b}; x=(\${c-b})/\${a}=\${ans}\` };
+    };
+    const gen_slope=()=>{
+      let x1=randInt(-6,6),y1=randInt(-6,6),x2=x1,y2=y1; while(x2===x1)x2=randInt(-6,6); y2=randInt(-6,6);
+      const ans=F(y2-y1,x2-x1);
+      return {kind:'slope', meta:{x1,y1,x2,y2}, prompt:\`Find the slope through (\${x1}, \${y1}) and (\${x2}, \${y2}).\`, type:'numeric', answer:ans, hint:'m=(y2−y1)/(x2−x1)', solution:\`m=(\${y2}-\${y1})/(\${x2}-\${x1})=\${ans}\`};
+    };
+    const gen_percent=()=>{
+      const base=[40,50,60,80,100,120][randInt(0,5)], pct=[5,10,12,15,20,25][randInt(0,5)], nv=base*(1+pct/100);
+      return {kind:'percent', meta:{base,pct,nv}, prompt:\`A price is $\${base} and increases by \${pct}%. What is the new price?\`, type:'numeric', answer:String(nv), hint:'Multiply by (1+percent).', solution:\`New=\${base}*(1+\${pct}/100)=\${nv}\`};
+    };
+    const gen_exponent_rules=()=>{
+      let a=randInt(1,5),b=randInt(1,5);
+      if(Math.random()<0.5){
+        const ans=\`x^\${a+b}\`; const opts=[ans,\`x^\${a*b}\`,\`x^\${a-b-1}\`,\`x^\${a+b+1}\`];
+        return {kind:'exp_mul', meta:{a,b}, prompt:\`Simplify: x^\${a} * x^\${b}\`, type:'mcq', answer:ans, options:shuffle(opts), hint:'Add exponents.', solution:'Same base multiply → add exponents.'};
+      } else {
+        if(a<b)[a,b]=[b,a]; const ans=\`x^\${a-b}\`; const opts=[ans,\`x^\${a*b}\`,\`x^\${a-b-1}\`,\`x^\${a+b+1}\`];
+        return {kind:'exp_div', meta:{a,b}, prompt:\`Simplify: x^\${a} / x^\${b}\`, type:'mcq', answer:ans, options:shuffle(opts), hint:'Subtract exponents.', solution:'Same base divide → subtract exponents.'};
+      }
+    };
+    const gen_quadratic_roots=()=>{
+      const choices=[-5,-4,-3,-2,-1,1,2,3,4,5], p=choices[randInt(0,choices.length-1)], q=choices[randInt(0,choices.length-1)];
+      const b=p+q,c=p*q; const r1=-p,r2=-q,small=Math.min(r1,r2);
+      return {kind:'quad_factor', meta:{p,q,b,c,r1,r2}, prompt:\`Solve x^2 + \${b}x + \${c} = 0 (give the smaller root)\`, type:'numeric', answer:String(small), hint:'Find two numbers that multiply to c and add to b.', solution:\`(x+\${p})(x+\${q})=0 → x=\${-p} or \${-q}\`};
+    };
+    const gen_proportion=()=>{
+      const a=randInt(2,9),b=randInt(2,9),c=randInt(2,9), num=b*c, den=a, ans=F(num,den);
+      return {kind:'proportion', meta:{a,b,c,num,den}, prompt:\`Solve for x: \${a}/\${b} = \${c}/x\`, type:'numeric', answer:ans, hint:'Cross-multiply.', solution:\`\${a}x=\${b}·\${c} → x=\${num}/\${den}=\${ans}\`};
+    };
+
+    function joinSteps(arr){ return '<ol>'+arr.map(s=>'<li>'+s+'</li>').join('')+'</ol>'; }
+    function explainFor(q){
+      const ex = (title, steps, tips, extra)=>{
+        return \`
+        <div class="explain">
+          <h4>\${title}</h4>
+          \${joinSteps(steps)}
+          \${tips? '<div class="tip"><b>Common mistakes:</b> '+tips+'</div>':''}
+          \${extra? '<details class="ex"><summary>Another example</summary>'+extra+'</details>':''}
+        </div>\`;
+      };
+      try{
+        switch(q.kind){
+          case 'linear_eq': {
+            const {a,b,c} = q.meta, rhs=c-b, ans=F(rhs,a);
+            return ex('Solve a two-step linear equation',
+              [
+                'Undo addition/subtraction first: '+code(\`\${a}x + \${b} = \${c} ⇒ \${a}x = \${c} - \${b} = \${rhs}\`),
+                'Undo multiplication/division second: '+code(\`x = \${rhs}/\${a} = \${ans}\`),
+                'Check by substitution: plug x back into the original.'
+              ],
+              'Dividing before moving the constant; sign errors when subtracting b from both sides.',
+              '<p>Try: '+code('3x + 4 = 19')+' → '+code('3x=15')+' → '+code('x=5')+'</p>'
+            );
+          }
+          case 'slope': {
+            const {x1,y1,x2,y2} = q.meta;
+            const dy = y2 - y1, dx = x2 - x1, ans = F(dy, dx);
+            return ex('Find slope from two points',
+              [
+                'Use formula '+code('m = (y2 - y1) / (x2 - x1)')+'.',
+                code(\`y2 - y1 = \${y2} - \${y1} = \${dy}\`)+', '+code(\`x2 - x1 = \${x2} - \${x1} = \${dx}\`),
+                'Simplify the fraction: '+code(\`\${dy}/\${dx} = \${ans}\`)
+              ],
+              'Forgetting to subtract in the same order for numerator and denominator; dividing by zero if x2 = x1.',
+              '<p>Example: points (1,2) and (5,6) → '+code('Δy=4, Δx=4, m=1')+'</p>'
+            );
+          }
+          case 'percent': {
+            const {base,pct,nv} = q.meta;
+            return ex('Percent increase',
+              [
+                'Convert percent to multiplier: '+code('1 + p/100'),
+                code(\`Multiplier = 1 + \${pct}/100 = \${1+pct/100}\`),
+                code(\`New price = \${base} × \${1+pct/100} = \${nv}\`)
+              ],
+              'Adding the percent to the price instead of using a multiplier; moving decimal the wrong way.',
+              '<p>Example: $80 up 15% → multiplier '+code('1.15')+' → '+code('80 × 1.15 = 92')+'</p>'
+            );
+          }
+          case 'exp_mul': {
+            const {a,b} = q.meta;
+            return ex('Exponent rule (multiplication)',
+              [
+                'Same base multiply → add exponents: '+code('x^a · x^b = x^(a+b)'),
+                code(\`x^\${a} · x^\${b} = x^\${a+b}\`)
+              ],
+              'Multiplying exponents (a·b) instead of adding (a+b); changing the base.',
+              '<p>Example: '+code('x^3 · x^5 = x^8')+'</p>'
+            );
+          }
+          case 'exp_div': {
+            const {a,b} = q.meta;
+            return ex('Exponent rule (division)',
+              [
+                'Same base divide → subtract exponents: '+code('x^a / x^b = x^(a-b)'),
+                code(\`x^\${a} / x^\${b} = x^\${a-b}\`)
+              ],
+              'Dividing exponents (a/b) instead of subtracting (a−b); flipping the sign when b > a.',
+              '<p>Example: '+code('x^7 / x^2 = x^5')+'</p>'
+            );
+          }
+          case 'quad_factor': {
+            const {p,q,b,c,r1,r2} = q.meta;
+            return ex('Quadratic by factoring',
+              [
+                'For '+code('x^2 + bx + c')+', find numbers that multiply to c and add to b.',
+                code(\`\${p} × \${q} = \${c}\`)+' and '+code(\`\${p} + \${q} = \${b}\`),
+                'Factor: '+code(\`(x+\${p})(x+\${q})=0\`),
+                'Set each factor = 0: '+code(\`x=\${r1}\`)+' or '+code(\`x=\${r2}\`),
+                'Smaller root: '+code(String(Math.min(r1,r2)))
+              ],
+              'Mixing up signs for p and q; forgetting that both factors are set to zero.',
+              '<p>Example: '+code('x^2 + 5x + 6 = 0')+' → '+code('(x+2)(x+3)=0')+' → '+code('x=-2, -3')+'</p>'
+            );
+          }
+          case 'proportion': {
+            const {a,b,c,num,den} = q.meta;
+            const simp = F(num, den);
+            return ex('Solve a proportion',
+              [
+                'Cross multiply: '+code(\`\${a}·x = \${b}·\${c}\`),
+                'Isolate '+code('x')+': '+code(\`x = (\${b}·\${c})/\${a} = \${num}/\${den} = \${simp}\`)
+              ],
+              'Adding or subtracting across the fraction; dividing by the wrong number.',
+              '<p>Example: '+code('3/4 = 9/x')+' → '+code('3x = 36')+' → '+code('x=12')+'</p>'
+            );
+          }
+        }
+      }catch(e){ /* fall through */ }
+      // Fallback generic
+      const sol = q.solution ? '<p><b>One solution:</b> '+q.solution+'</p>' : '';
+      const hint = q.hint ? '<p class="muted">Hint: '+q.hint+'</p>' : '';
+      return '<div class="explain">'+sol+hint+'</div>';
+    }
+
+    // LESSONS: (using the same as before; static items keep their brief solution, Explain will still enrich known kinds)
     const LESSONS={
       '0':{title:'Pre-Algebra Essentials',description:'PEMDAS, integers, fractions',items:[
         {id:'0.1',title:'Order of Operations (PEMDAS)',objectives:['Evaluate in PEMDAS order','Avoid MD/AS left-to-right mistakes'],
@@ -217,14 +367,14 @@
 
     function onModuleChange(){
       const mid=$('#moduleSelect').value;
-      const items=LESSONS[mid].items.map((L,i)=>({value:i,label:`${L.id} – ${L.title}`}));
+      const items=LESSONS[mid].items.map((L,i)=>({value:i,label:\`\${L.id} – \${L.title}\`}));
       fillSelect('#lessonSelect', items);
       const L=LESSONS[mid].items[0];
-      $('#lessonIntro').innerHTML=`<div class="muted"><b>Objectives:</b> ${L.objectives.join('; ')}<br><b>Notes:</b> ${L.notes}</div>`;
+      $('#lessonIntro').innerHTML=\`<div class="muted"><b>Objectives:</b> \${L.objectives.join('; ')}<br><b>Notes:</b> \${L.notes}</div>\`;
     }
 
     function switchStudent(name){ currentStudent=name; progress=getProgress(currentStudent); updateStorageInfo(); }
-    function updateStorageInfo(){ const bytes=(localStorage.getItem(LS_KEY(currentStudent))||'').length; $('#storageInfo').textContent=`Local save: ${(bytes/1024).toFixed(1)} KB`; }
+    function updateStorageInfo(){ const bytes=(localStorage.getItem(LS_KEY(currentStudent))||'').length; $('#storageInfo').textContent=\`Local save: \${(bytes/1024).toFixed(1)} KB\`; }
     function setTitle(t){ $('#activityTitle').textContent=t; }
 
     const PASS=0.70;
@@ -240,20 +390,20 @@
       ]);
       runQuestionSet(bank, (correct,total)=>{
         const pct=total?Math.round(100*correct/total):0;
-        $('#placementResult').innerHTML = `<b>Score:</b> ${correct}/${total} = ${pct}%`;
+        $('#placementResult').innerHTML = \`<b>Score:</b> \${correct}/\${total} = \${pct}%\`;
       });
     }
 
     function startLesson(){
       const mid=$('#moduleSelect').value; const idx=Number($('#lessonSelect').value);
       const L=LESSONS[mid].items[idx];
-      setTitle(`Lesson: ${L.title}`);
+      setTitle(\`Lesson: \${L.title}\`);
       const qs=L.bank.slice();
       runQuestionSet(qs, (correct,total)=>{
         recordScore(progress, String(mid), L.id, correct, total);
         const pct=total?Math.round(100*correct/total):0;
         const passed=(correct/total)>=PASS;
-        $('#activity').innerHTML = `<div class="card">Lesson score: <b>${correct}/${total} = ${pct}%</b><br>${passed? '🎉 Mastery achieved!' : '📈 Keep practicing to improve.'}</div>`;
+        $('#activity').innerHTML = \`<div class="card">Lesson score: <b>\${correct}/\${total} = \${pct}%</b><br>\${passed? '🎉 Mastery achieved!' : '📈 Keep practicing to improve.'}</div>\`;
       });
     }
 
@@ -261,8 +411,8 @@
       const key=$('#practiceSelect').value; const n=clamp(Number($('#practiceCount').value)||5,1,50);
       const gen=PRACTICE[key][1];
       const qs=Array.from({length:n}, ()=> gen());
-      setTitle(`Practice: ${PRACTICE[key][0]} (${n})`);
-      runQuestionSet(qs, ()=>{ $('#activity').innerHTML += `<div class="muted mt8">Practice finished.</div>`; });
+      setTitle(\`Practice: \${PRACTICE[key][0]} (\${n})\`);
+      runQuestionSet(qs, ()=>{ $('#activity').innerHTML += \`<div class="muted mt8">Practice finished.</div>\`; });
     }
 
     function runQuestionSet(qs, onFinish){
@@ -271,10 +421,10 @@
       const render=()=>{
         if(i>=qs.length){ onFinish(correct,total); return; }
         const q=qs[i];
-        host.innerHTML = `
+        host.innerHTML = \`
           <div class="card">
-            <div class="muted">Question ${i+1}/${qs.length}</div>
-            <div class="mt8">${q.prompt}</div>
+            <div class="muted">Question \${i+1}/\${qs.length}</div>
+            <div class="mt8">\${q.prompt}</div>
             <div class="mt8" id="answerArea"></div>
             <div class="row mt8">
               <button id="submitBtn" class="primary">Submit</button>
@@ -283,19 +433,19 @@
               <button id="skipBtn">Skip</button>
             </div>
             <div id="feedback" class="mt8 muted"></div>
-          </div>`;
+          </div>\`;
         const area=$('#answerArea');
-        let getVal=()=>''; 
+        let getVal=()=>'';
         if(q.type==='mcq'){
           const letters='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-          area.innerHTML=q.options.map((opt,idx)=>`<label class="row"><input type="radio" name="opt" value="${opt}"> ${letters[idx]}. ${opt}</label>`).join('');
+          area.innerHTML=q.options.map((opt,idx)=>\`<label class="row"><input type="radio" name="opt" value="\${opt}"> \${letters[idx]}. \${opt}</label>\`).join('');
           getVal=()=>{ const sel=document.querySelector('input[name=opt]:checked'); return sel? sel.value: ''; };
         } else {
-          area.innerHTML=`<input id="ansInput" type="text" placeholder="Your answer" />`;
+          area.innerHTML=\`<input id="ansInput" type="text" placeholder="Your answer" />\`;
           getVal=()=> $('#ansInput').value.trim();
         }
-        $('#hintBtn').onclick=()=> $('#feedback').textContent=q.hint||'Try smaller steps.';
-        $('#explainBtn').onclick=()=> $('#feedback').textContent=q.solution||'We will walk through steps after you try.';
+        $('#hintBtn').onclick=()=> $('#feedback').innerHTML='<div class="explain"><p>'+ (q.hint||'Try a smaller step or draw a quick sketch.') +'</p></div>';
+        $('#explainBtn').onclick=()=> $('#feedback').innerHTML=explainFor(q);
         $('#skipBtn').onclick=()=>{ i++; render(); };
         $('#submitBtn').onclick=()=>{
           const val=getVal(); if(!val){ $('#feedback').textContent='Enter or choose an answer.'; return; }
@@ -304,21 +454,47 @@
           else if(q.type==='numeric'){ ok=approxEqual(val, q.answer); }
           else { ok=String(val).toLowerCase()===String(q.answer).toLowerCase(); }
           if(ok){ correct++; $('#feedback').textContent='✅ Correct!'; }
-          else { $('#feedback').textContent=`❌ Not quite. One answer: ${q.answer}`; }
-          setTimeout(()=>{ i++; render(); }, 500);
+          else { $('#feedback').innerHTML=\`❌ Not quite. One answer: \${q.answer}\`; }
+          setTimeout(()=>{ i++; render(); }, 600);
         };
       };
       render();
     }
 
     function initUI(){
-      const roster=getRoster(); currentStudent=roster[0]; progress=getProgress(currentStudent);
-      fillSelect('#studentSelect', roster.map(n=>({value:n,label:n}))); $('#studentSelect').value=currentStudent; updateStorageInfo();
-      $('#addStudentBtn').onclick=()=>{ const nm=prompt('Student name:'); if(!nm)return; const list=getRoster(); list.push(nm); setRoster(list); fillSelect('#studentSelect', getRoster().map(n=>({value:n,label:n}))); $('#studentSelect').value=nm; switchStudent(nm); };
-      $('#delStudentBtn').onclick=()=>{ const list=getRoster().filter(n=>n!==currentStudent); if(!confirm(`Delete ${currentStudent}?`)) return; setRoster(list.length?list:['Learner']); const newName=getRoster()[0]; fillSelect('#studentSelect', getRoster().map(n=>({value:n,label:n}))); switchStudent(newName); };
-      $('#studentSelect').onchange=e=>switchStudent(e.target.value);
+      // Badge + switcher
+      const badge = $('#modeBadge');
+      const btn = $('#toggleMode');
+      badge.textContent = isStudent ? 'Student' : 'Teacher';
+      btn.textContent = isStudent ? 'Switch to Teacher' : 'Switch to Student';
+      btn.onclick = ()=>{
+        const p = new URLSearchParams(location.search);
+        if (isStudent) { p.set('mode','teacher'); p.delete('student'); }
+        else { p.set('mode','student'); }
+        location.search = p.toString();
+      };
 
-      const moduleOpts=Object.entries(LESSONS).map(([k,m])=>({value:k,label:`[${k}] ${m.title}`}));
+      // Roster and progress
+      let roster=getRoster();
+      if (isStudent){
+        document.querySelectorAll('.teacherOnly').forEach(el=> el.style.display='none');
+        $('#rosterCard').style.display='none';
+        const name = (forcedStudentName||'Learner').trim() || 'Learner';
+        if (!roster.includes(name)) roster = [name];
+        currentStudent = name;
+        progress = getProgress(currentStudent);
+      } else {
+        currentStudent = roster[0];
+        progress = getProgress(currentStudent);
+        fillSelect('#studentSelect', roster.map(n=>({value:n,label:n})));
+        $('#studentSelect').value=currentStudent;
+        $('#addStudentBtn').onclick=()=>{ const nm=prompt('Student name:'); if(!nm)return; roster=getRoster(); roster.push(nm); setRoster(roster); fillSelect('#studentSelect', getRoster().map(n=>({value:n,label:n}))); $('#studentSelect').value=nm; switchStudent(nm); };
+        $('#delStudentBtn').onclick=()=>{ const list=getRoster().filter(n=>n!==currentStudent); if(!confirm(\`Delete \${currentStudent}?\`)) return; setRoster(list.length?list:['Learner']); const newName=getRoster()[0]; fillSelect('#studentSelect', getRoster().map(n=>({value:n,label:n}))); switchStudent(newName); };
+        $('#studentSelect').onchange=e=>switchStudent(e.target.value);
+      }
+      updateStorageInfo();
+
+      const moduleOpts=Object.entries(LESSONS).map(([k,m])=>({value:k,label:\`[\${k}] \${m.title}\`}));
       fillSelect('#moduleSelect', moduleOpts); $('#moduleSelect').onchange=onModuleChange; onModuleChange();
 
       const pOpts=Object.entries(PRACTICE).map(([k,[name]])=>({value:k,label:name}));
@@ -328,8 +504,10 @@
       $('#startPlacement').onclick=startPlacement;
       $('#startLesson').onclick=startLesson;
       $('#startPractice').onclick=startPractice;
-      $('#downloadTxt').onclick=()=>downloadWorksheet(false);
-      $('#downloadPdf').onclick=()=>downloadWorksheet(true);
+      if (!isStudent){
+        $('#downloadTxt').onclick=()=>downloadWorksheet(false);
+        $('#downloadPdf').onclick=()=>downloadWorksheet(true);
+      }
     }
     window.addEventListener('DOMContentLoaded', initUI);
 
@@ -343,10 +521,10 @@
       const n=clamp(Number(document.querySelector('#worksheetCount').value)||10,1,50);
       const [name, gen]=PRACTICE[key];
       const problems=[], answers=[];
-      for(let i=0;i<n;i++){ const q=gen(); const p=q.prompt.replace(' (give the smaller root)',''); problems.push(`${i+1}. ${p}`); answers.push(`${i+1}. ${q.answer}`); }
+      for(let i=0;i<n;i++){ const q=gen(); const p=q.prompt.replace(' (give the smaller root)',''); problems.push(\`\${i+1}. \${p}\`); answers.push(\`\${i+1}. \${q.answer}\`); }
       if(!asPdf){
-        downloadText(`worksheet_${key}_${n}.txt`, `Algebra Worksheet - ${name}\n\n${problems.join('\n')}`);
-        downloadText(`worksheet_${key}_${n}_answers.txt`, `Answer Key - ${name}\n\n${answers.join('\n')}`);
+        downloadText(\`worksheet_\${key}_\${n}.txt\`, \`Algebra Worksheet - \${name}\n\n\${problems.join('\n')}\`);
+        downloadText(\`worksheet_\${key}_\${n}_answers.txt\`, \`Answer Key - \${name}\n\n\${answers.join('\n')}\`);
         return;
       }
       if(!window.jspdf){ alert('jsPDF not available yet. Open once online to cache.'); return; }
@@ -355,9 +533,9 @@
         const doc=new jsPDF({unit:'pt', format:'letter'});
         const margin=54; let y=margin; const width=612; const lineH=16;
         doc.setFont('Helvetica','bold'); doc.setFontSize(16);
-        doc.text(isAnswers? `Answer Key – ${name}` : `Worksheet – ${name}`, margin, y); y+=24;
+        doc.text(isAnswers? \`Answer Key – \${name}\` : \`Worksheet – \${name}\`, margin, y); y+=24;
         doc.setFont('Helvetica','normal'); doc.setFontSize(12);
-        const arr = isAnswers? problems.map((p,i)=> `${p}    Ans: ${answers[i].split('. ')[1]}`) : problems;
+        const arr = isAnswers? problems.map((p,i)=> \`\${p}    Ans: \${answers[i].split('. ')[1]}\`) : problems;
         for(const line of arr){
           const wrapped=doc.splitTextToSize(line, width-2*margin);
           for(const w of wrapped){ if(y>756){ doc.addPage(); y=margin; } doc.text(w, margin, y); y+=lineH; }
@@ -365,8 +543,8 @@
         }
         doc.save(filename);
       };
-      mk(`worksheet_${key}_${n}.pdf`, false);
-      mk(`worksheet_${key}_${n}_answers.pdf`, true);
+      mk(\`worksheet_\${key}_\${n}.pdf\`, false);
+      mk(\`worksheet_\${key}_\${n}_answers.pdf\`, true);
     }
   </script>
 </body>
