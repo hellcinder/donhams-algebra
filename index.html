@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Algebra Tutor — No Graph</title>
+  <meta name="theme-color" content="#0b5fff" />
+  <style>
+    :root { --bg:#fff; --fg:#111; --muted:#606770; --brand:#0b5fff; }
+    * { box-sizing:border-box }
+    body { margin:0; font: 16px system-ui, -apple-system, Segoe UI, Roboto, Helvetica; color:var(--fg); background:var(--bg); }
+    header { padding:12px 16px; background:var(--brand); color:#fff; position:sticky; top:0; z-index:10 }
+    h1 { margin:0; font-size:20px; }
+    main { padding:16px; max-width:960px; margin:0 auto; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    button, select, input[type=text], input[type=number] { padding:10px 12px; border:1px solid #ccc; border-radius:10px; background:#fff; }
+    button { cursor:pointer; border-color:#bbb; }
+    button.primary { background:var(--brand); color:#fff; border:none; }
+    .card { border:1px solid #ddd; border-radius:12px; padding:12px; margin:12px 0; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+    .muted { color:var(--muted); }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#eef3ff; color:#0b5fff; font-weight:600; font-size:12px; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:12px; }
+    .right { text-align:right }
+    .mb8 { margin-bottom:8px }
+    .mt8 { margin-top:8px }
+  </style>
+</head>
+<body>
+  <header><h1>Algebra Tutor</h1></header>
+  <main>
+    <section class="card">
+      <div class="row">
+        <span class="pill">Student</span>
+        <select id="studentSelect"></select>
+        <button id="addStudentBtn">Add Student</button>
+        <button id="delStudentBtn">Delete</button>
+        <span class="muted" id="storageInfo"></span>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <h3>Placement Quiz</h3>
+        <p class="muted">8 quick questions to suggest a starting module.</p>
+        <button class="primary" id="startPlacement">Start Quiz</button>
+        <div id="placementResult" class="mt8"></div>
+      </div>
+
+      <div class="card">
+        <h3>Lessons</h3>
+        <div class="row mb8">
+          <select id="moduleSelect"></select>
+          <select id="lessonSelect"></select>
+          <button id="startLesson" class="primary">Start Lesson</button>
+        </div>
+        <div id="lessonIntro" class="muted"></div>
+      </div>
+
+      <div class="card">
+        <h3>Quick Practice</h3>
+        <div class="row">
+          <select id="practiceSelect"></select>
+          <input type="number" id="practiceCount" min="1" max="50" value="5" />
+          <button id="startPractice" class="primary">Start</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Teacher Mode</h3>
+        <div class="row mb8">
+          <select id="worksheetTopic"></select>
+          <input type="number" id="worksheetCount" min="1" max="50" value="10" />
+        </div>
+        <div class="row">
+          <button id="downloadTxt">Download TXT</button>
+          <button id="downloadPdf" class="primary">Download PDF</button>
+        </div>
+        <p id="pdfHint" class="muted mt8">PDF export uses jsPDF; works offline once cached.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3 id="activityTitle" class="mb8">Activity</h3>
+      <div id="activity"></div>
+    </section>
+  </main>
+
+  <!-- Libs (Chart.js removed) -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
+
+  <!-- Inline app.js (graph-related code removed) -->
+  <script defer>
+    'use strict';
+    const $ = sel => document.querySelector(sel);
+    const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+    function randInt(a,b){ return (Math.random()*(b-a+1)|0)+a; }
+    function gcd(a,b){ a=Math.abs(a); b=Math.abs(b); while(b){ [a,b]=[b,a%b] } return a||1 }
+    function simplifyFraction(n,d){ const g=gcd(n,d); const s=(d<0?-1:1); return [s*n/g, Math.abs(d)/g]; }
+    function F(n,d){ const [nn,dd]=simplifyFraction(n,d); return dd===1? String(nn): `${nn}/${dd}`; }
+    function fracToNumber(s){ if(typeof s==='number')return s; if(typeof s!=='string')return NaN; s=s.trim(); if(s.includes('/')){ const [n,d]=s.split('/').map(Number); return n/d; } return Number(s); }
+    function approxEqual(a,b,tol=1e-3){ return Math.abs(fracToNumber(a)-fracToNumber(b))<=tol; }
+    function shuffle(arr){ return arr.map(v=>[Math.random(),v]).sort((a,b)=>a[0]-b[0]).map(x=>x[1]); }
+
+    const RKEY='algebra_roster';
+    const LS_KEY=(student)=>`algebra_progress_${student||'Learner'}`;
+    function getRoster(){ try{return JSON.parse(localStorage.getItem(RKEY))||['Learner'];}catch{return ['Learner'];} }
+    function setRoster(list){ localStorage.setItem(RKEY, JSON.stringify([...new Set(list)])); }
+    function getProgress(student){ try{return JSON.parse(localStorage.getItem(LS_KEY(student)))||{user:student,modules:{}};}catch{return {user:student,modules:{}};} }
+    function saveProgress(p){ localStorage.setItem(LS_KEY(p.user), JSON.stringify(p)); }
+    function lessonBest(p,mid,lid){ try{return p.modules[mid].lessons[lid].best||0;}catch{return 0;} }
+    function recordScore(p,mid,lid,correct,total){ const score=total?correct/total:0; p.modules[mid]=p.modules[mid]||{lessons:{}}; const L=p.modules[mid].lessons[lid]=p.modules[mid].lessons[lid]||{best:0,history:[]}; L.history.push({correct,total,ts:Date.now()}); L.best=Math.max(L.best,score); saveProgress(p); }
+
+    const gen_linear_eq=()=>{ const a=[2,3,4,5,6,7,8,9][randInt(0,7)], x=randInt(-6,6), b=randInt(-9,9), c=a*x+b; const ans=F(c-b,a);
+      return {prompt:`Solve for x: ${a}x + ${b} = ${c}`, type:'numeric', answer:ans, hint:'Undo addition/subtraction, then division.', solution:`${a}x=${c-b}; x=(${c-b})/${a}=${ans}` }; };
+    const gen_slope=()=>{ let x1=randInt(-6,6),y1=randInt(-6,6),x2=x1,y2=y1; while(x2===x1)x2=randInt(-6,6); y2=randInt(-6,6); const ans=F(y2-y1,x2-x1);
+      return {prompt:`Find the slope through (${x1}, ${y1}) and (${x2}, ${y2}).`, type:'numeric', answer:ans, hint:'m=(y2−y1)/(x2−x1)', solution:`m=(${y2}-${y1})/(${x2}-${x1})=${ans}`}; };
+    const gen_percent=()=>{ const base=[40,50,60,80,100,120][randInt(0,5)], pct=[5,10,12,15,20,25][randInt(0,5)], nv=base*(1+pct/100);
+      return {prompt:`A price is $${base} and increases by ${pct}%. What is the new price?`, type:'numeric', answer:String(nv), hint:'Multiply by (1+percent).', solution:`New=${base}*(1+${pct}/100)=${nv}`}; };
+    const gen_exponent_rules=()=>{ let a=randInt(1,5),b=randInt(1,5);
+      if(Math.random()<0.5){ const ans=`x^${a+b}`; const opts=[ans,`x^${a*b}`,`x^${a-b-1}`,`x^${a+b+1}`];
+        return {prompt:`Simplify: x^${a} * x^${b}`, type:'mcq', answer:ans, options:shuffle(opts), hint:'Add exponents.', solution:'Same base multiply → add exponents.'}; }
+      else { if(a<b)[a,b]=[b,a]; const ans=`x^${a-b}`; const opts=[ans,`x^${a*b}`,`x^${a-b-1}`,`x^${a+b+1}`];
+        return {prompt:`Simplify: x^${a} / x^${b}`, type:'mcq', answer:ans, options:shuffle(opts), hint:'Subtract exponents.', solution:'Same base divide → subtract exponents.'}; } };
+    const gen_quadratic_roots=()=>{ const choices=[-5,-4,-3,-2,-1,1,2,3,4,5], p=choices[randInt(0,choices.length-1)], q=choices[randInt(0,choices.length-1)]; const b=p+q,c=p*q; const r1=-p,r2=-q,small=Math.min(r1,r2);
+      return {prompt:`Solve x^2 + ${b}x + ${c} = 0 (give the smaller root)`, type:'numeric', answer:String(small), hint:'Find two numbers that multiply to c and add to b.', solution:`(x+${p})(x+${q})=0 → x=${-p} or ${-q}`}; };
+    const gen_proportion=()=>{ const a=randInt(2,9),b=randInt(2,9),c=randInt(2,9), num=b*c, den=a, ans=F(num,den);
+      return {prompt:`Solve for x: ${a}/${b} = ${c}/x`, type:'numeric', answer:ans, hint:'Cross-multiply.', solution:`${a}x=${b}·${c} → x=${num}/${den}=${ans}`}; };
+
+    const LESSONS={
+      '0':{title:'Pre-Algebra Essentials',description:'PEMDAS, integers, fractions',items:[
+        {id:'0.1',title:'Order of Operations (PEMDAS)',objectives:['Evaluate in PEMDAS order','Avoid MD/AS left-to-right mistakes'],
+         notes:'PEMDAS: Parentheses, Exponents, then MD left-to-right, then AS left-to-right.',examples:['7+3*4=19','(7+3)*4=40'],bank:[
+          {prompt:'Compute: 8 + 2 * 5',type:'numeric',answer:'18',hint:'Multiply before adding.',solution:'2*5=10, 8+10=18'},
+          {prompt:'Compute: (8 + 2) * 5',type:'numeric',answer:'50',hint:'Parentheses first.',solution:'10*5=50'},
+          {prompt:'Which equals 3 + 2^3?',type:'mcq',answer:'11',options:['11','25','16','13'],hint:'Exponents before addition.',solution:'2^3=8 → 11'}
+        ]},
+        {id:'0.2',title:'Integers & Number Line',objectives:['Add/subtract integers','Absolute value'],
+         notes:'Integers include negatives. |x| is distance from 0.',examples:['-3+5=2','|-7|=7'],bank:[
+          {prompt:'Compute: -4 + 9',type:'numeric',answer:'5'},
+          {prompt:'What is | -12 | ?',type:'numeric',answer:'12'}
+        ]},
+        {id:'0.3',title:'Fractions & Decimals',objectives:['Convert frac↔dec','Add like denominators'],
+         notes:'Divide numerator by denominator to get decimal; add numerators for like denominators.',examples:['3/4=0.75','1/5+2/5=3/5'],bank:[
+          {prompt:'Convert 1/8 to decimal',type:'numeric',answer:'0.125',hint:'1 ÷ 8'},
+          {prompt:'Compute: 2/7 + 3/7',type:'numeric',answer:'5/7'}
+        ]}
+      ]},
+      '1':{title:'Variables & Expressions',description:'Variables and evaluation',items:[
+        {id:'1.1',title:'Variables & Expressions',objectives:['Variables','Evaluate by substitution','Translate words→algebra'],
+         notes:'A variable stands for a number.',examples:['x=4 ⇒ 3x+2=14','Twice a number plus 5 → 2x+5'],bank:[
+          {prompt:'If x=5, what is 2x+7?',type:'numeric',answer:'17'},
+          {prompt:"Which expression means 'three more than twice n'?",type:'mcq',answer:'2n+3',options:['2n+3','3n+2','n/2+3','3-2n']}
+        ]}
+      ]},
+      '2':{title:'Equations & Inequalities',description:'1-step/2-step equations, inequalities',items:[
+        {id:'2.1',title:'Solving 1-Step & 2-Step Equations',objectives:['Solve ax+b=c','Check by substitution'],
+         notes:'Undo addition/subtraction, then multiplication/division.',examples:['2x+5=11 ⇒ x=3','x/4−2=3 ⇒ x=20'],bank:[
+          gen_linear_eq(), gen_linear_eq(), {prompt:'Solve for x: x/3 + 4 = 9',type:'numeric',answer:'15'}
+        ]},
+        {id:'2.2',title:'Inequalities',objectives:['Solve linear inequalities','Flip sign when ×/÷ by negative'],
+         notes:'Like equations, but flip sign when × or ÷ by a negative.',examples:['3x−2>7 ⇒ x>3','−2x≤8 ⇒ x≥−4'],bank:[
+          {prompt:'Solve: 3x − 5 > 1',type:'short',answer:'x>2'},
+          {prompt:'Solve: −4x ≤ 12',type:'short',answer:'x≥-3'}
+        ]}
+      ]},
+      '3':{title:'Graphing Lines',description:'Slope, intercepts',items:[
+        {id:'3.1',title:'Slope-Intercept Form',objectives:['Slope from 2 points','Identify m and b'],
+         notes:'In y=mx+b, m is slope; b is y-intercept.',examples:['y=2x+3 → m=2, b=3'],bank:[
+          gen_slope(), {prompt:'In y=−3x+7, what is the slope?',type:'numeric',answer:'-3'},
+          {prompt:'In y=0.5x−4, what is the y-intercept?',type:'numeric',answer:'-4'}
+        ]}
+      ]},
+      '4':{title:'Systems of Equations',description:'Substitution & elimination',items:[
+        {id:'4.1',title:'Systems',objectives:['Solve by substitution/elimination','Solutions count'],
+         notes:'Substitute or eliminate to solve.',examples:['x+y=10, x−y=2 ⇒ x=6, y=4'],bank:[
+          {prompt:'Solve: x + y = 9 and x − y = 3. What is x?',type:'numeric',answer:'6'},
+          {prompt:'Solve: x = 2y and 3x − y = 11. What is y?',type:'numeric',answer:'11/5'}
+        ]}
+      ]},
+      '5':{title:'Exponents & Polynomials',description:'Exponent rules & combining terms',items:[
+        {id:'5.1',title:'Exponents & Polynomials',objectives:['Apply exponent rules','Combine like terms'],
+         notes:'x^a*x^b=x^(a+b); x^a/x^b=x^(a−b). Combine like terms only.',examples:['3x^2+5x^2=8x^2'],bank:[
+          gen_exponent_rules(),
+          {prompt:'Combine like terms: 4x^2 + 3x − 2x^2 + x',type:'mcq',answer:'2x^2 + 4x',options:['2x^2 + 4x','6x^2 + 4x','2x^2 + 3x','x^2 + 4x']}
+        ]}
+      ]},
+      '6':{title:'Factoring & Quadratics',description:'Factor & solve',items:[
+        {id:'6.1',title:'Quadratics (Factoring)',objectives:['Factor simple quadratics','Solve by factoring'],
+         notes:'x^2+bx+c → numbers that multiply to c and add to b.',examples:['x^2+5x+6=(x+2)(x+3)'],bank:[
+          gen_quadratic_roots(), {prompt:'Solve x^2 − 9 = 0 (give the positive root)',type:'numeric',answer:'3'}
+        ]}
+      ]},
+      '7':{title:'Word Problems & Modeling',description:'Proportions, percent, unit rate',items:[
+        {id:'7.1',title:'Word Problems & Proportional Reasoning',objectives:['Translate words→equations','Proportions & percents'],
+         notes:'Identify the unknown, write the equation, solve.',examples:['180 miles in 3 hours → 60 mph'],bank:[
+          gen_proportion(), gen_percent()
+        ]}
+      ]}
+    };
+
+    const PRACTICE={
+      'linear':['Linear equations', gen_linear_eq],
+      'slope':['Slope from two points', gen_slope],
+      'percent':['Percent change', gen_percent],
+      'exponent':['Exponent rules', gen_exponent_rules],
+      'quadratic':['Quadratic factoring', gen_quadratic_roots],
+      'proportion':['Proportion solving', gen_proportion]
+    };
+
+    let currentStudent=null, progress=null;
+
+    function fillSelect(sel, items){
+      const el=$(sel); el.innerHTML='';
+      const arr=items.map(it=> typeof it==='string'? {value:it,label:it}: it);
+      for(const it of arr){ const o=document.createElement('option'); o.value=it.value; o.textContent=it.label; el.appendChild(o); }
+    }
+
+    function onModuleChange(){
+      const mid=$('#moduleSelect').value;
+      const items=LESSONS[mid].items.map((L,i)=>({value:i,label:`${L.id} – ${L.title}`}));
+      fillSelect('#lessonSelect', items);
+      const L=LESSONS[mid].items[0];
+      $('#lessonIntro').innerHTML=`<div class="muted"><b>Objectives:</b> ${L.objectives.join('; ')}<br><b>Notes:</b> ${L.notes}</div>`;
+    }
+
+    function switchStudent(name){ currentStudent=name; progress=getProgress(currentStudent); updateStorageInfo(); }
+    function updateStorageInfo(){ const bytes=(localStorage.getItem(LS_KEY(currentStudent))||'').length; $('#storageInfo').textContent=`Local save: ${(bytes/1024).toFixed(1)} KB`; }
+    function setTitle(t){ $('#activityTitle').textContent=t; }
+
+    const PASS=0.70;
+
+    function startPlacement(){
+      setTitle('Placement Quiz');
+      const bank=shuffle([
+        {prompt:'Compute: 6 + 3 * 4', type:'numeric', answer:'18', hint:'Multiply before adding.'},
+        {prompt:'What is | -9 | ?', type:'numeric', answer:'9'},
+        {prompt:'If x=3, what is 4x−2?', type:'numeric', answer:'10'},
+        {prompt:'Solve: 2x+5=15', type:'numeric', answer:'5'},
+        gen_slope(), gen_exponent_rules(), gen_quadratic_roots(), gen_proportion()
+      ]);
+      runQuestionSet(bank, (correct,total)=>{
+        const pct=total?Math.round(100*correct/total):0;
+        $('#placementResult').innerHTML = `<b>Score:</b> ${correct}/${total} = ${pct}%`;
+      });
+    }
+
+    function startLesson(){
+      const mid=$('#moduleSelect').value; const idx=Number($('#lessonSelect').value);
+      const L=LESSONS[mid].items[idx];
+      setTitle(`Lesson: ${L.title}`);
+      const qs=L.bank.slice();
+      runQuestionSet(qs, (correct,total)=>{
+        recordScore(progress, String(mid), L.id, correct, total);
+        const pct=total?Math.round(100*correct/total):0;
+        const passed=(correct/total)>=PASS;
+        $('#activity').innerHTML = `<div class="card">Lesson score: <b>${correct}/${total} = ${pct}%</b><br>${passed? '🎉 Mastery achieved!' : '📈 Keep practicing to improve.'}</div>`;
+      });
+    }
+
+    function startPractice(){
+      const key=$('#practiceSelect').value; const n=clamp(Number($('#practiceCount').value)||5,1,50);
+      const gen=PRACTICE[key][1];
+      const qs=Array.from({length:n}, ()=> gen());
+      setTitle(`Practice: ${PRACTICE[key][0]} (${n})`);
+      runQuestionSet(qs, ()=>{ $('#activity').innerHTML += `<div class="muted mt8">Practice finished.</div>`; });
+    }
+
+    function runQuestionSet(qs, onFinish){
+      let i=0, correct=0, total=qs.length;
+      const host=$('#activity'); host.innerHTML='';
+      const render=()=>{
+        if(i>=qs.length){ onFinish(correct,total); return; }
+        const q=qs[i];
+        host.innerHTML = `
+          <div class="card">
+            <div class="muted">Question ${i+1}/${qs.length}</div>
+            <div class="mt8">${q.prompt}</div>
+            <div class="mt8" id="answerArea"></div>
+            <div class="row mt8">
+              <button id="submitBtn" class="primary">Submit</button>
+              <button id="hintBtn">Hint</button>
+              <button id="explainBtn">Explain</button>
+              <button id="skipBtn">Skip</button>
+            </div>
+            <div id="feedback" class="mt8 muted"></div>
+          </div>`;
+        const area=$('#answerArea');
+        let getVal=()=>''; 
+        if(q.type==='mcq'){
+          const letters='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+          area.innerHTML=q.options.map((opt,idx)=>`<label class="row"><input type="radio" name="opt" value="${opt}"> ${letters[idx]}. ${opt}</label>`).join('');
+          getVal=()=>{ const sel=document.querySelector('input[name=opt]:checked'); return sel? sel.value: ''; };
+        } else {
+          area.innerHTML=`<input id="ansInput" type="text" placeholder="Your answer" />`;
+          getVal=()=> $('#ansInput').value.trim();
+        }
+        $('#hintBtn').onclick=()=> $('#feedback').textContent=q.hint||'Try smaller steps.';
+        $('#explainBtn').onclick=()=> $('#feedback').textContent=q.solution||'We will walk through steps after you try.';
+        $('#skipBtn').onclick=()=>{ i++; render(); };
+        $('#submitBtn').onclick=()=>{
+          const val=getVal(); if(!val){ $('#feedback').textContent='Enter or choose an answer.'; return; }
+          let ok=false;
+          if(q.type==='mcq'){ ok=String(val).toLowerCase()===String(q.answer).toLowerCase(); }
+          else if(q.type==='numeric'){ ok=approxEqual(val, q.answer); }
+          else { ok=String(val).toLowerCase()===String(q.answer).toLowerCase(); }
+          if(ok){ correct++; $('#feedback').textContent='✅ Correct!'; }
+          else { $('#feedback').textContent=`❌ Not quite. One answer: ${q.answer}`; }
+          setTimeout(()=>{ i++; render(); }, 500);
+        };
+      };
+      render();
+    }
+
+    function initUI(){
+      const roster=getRoster(); currentStudent=roster[0]; progress=getProgress(currentStudent);
+      fillSelect('#studentSelect', roster.map(n=>({value:n,label:n}))); $('#studentSelect').value=currentStudent; updateStorageInfo();
+      $('#addStudentBtn').onclick=()=>{ const nm=prompt('Student name:'); if(!nm)return; const list=getRoster(); list.push(nm); setRoster(list); fillSelect('#studentSelect', getRoster().map(n=>({value:n,label:n}))); $('#studentSelect').value=nm; switchStudent(nm); };
+      $('#delStudentBtn').onclick=()=>{ const list=getRoster().filter(n=>n!==currentStudent); if(!confirm(`Delete ${currentStudent}?`)) return; setRoster(list.length?list:['Learner']); const newName=getRoster()[0]; fillSelect('#studentSelect', getRoster().map(n=>({value:n,label:n}))); switchStudent(newName); };
+      $('#studentSelect').onchange=e=>switchStudent(e.target.value);
+
+      const moduleOpts=Object.entries(LESSONS).map(([k,m])=>({value:k,label:`[${k}] ${m.title}`}));
+      fillSelect('#moduleSelect', moduleOpts); $('#moduleSelect').onchange=onModuleChange; onModuleChange();
+
+      const pOpts=Object.entries(PRACTICE).map(([k,[name]])=>({value:k,label:name}));
+      fillSelect('#practiceSelect', pOpts);
+      fillSelect('#worksheetTopic', pOpts);
+
+      $('#startPlacement').onclick=startPlacement;
+      $('#startLesson').onclick=startLesson;
+      $('#startPractice').onclick=startPractice;
+      $('#downloadTxt').onclick=()=>downloadWorksheet(false);
+      $('#downloadPdf').onclick=()=>downloadWorksheet(true);
+    }
+    window.addEventListener('DOMContentLoaded', initUI);
+
+    function downloadText(filename, text){
+      const blob=new Blob([text], {type:'text/plain'});
+      const url=URL.createObjectURL(blob); const a=document.createElement('a');
+      a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url);
+    }
+    function downloadWorksheet(asPdf=false){
+      const key=document.querySelector('#worksheetTopic').value;
+      const n=clamp(Number(document.querySelector('#worksheetCount').value)||10,1,50);
+      const [name, gen]=PRACTICE[key];
+      const problems=[], answers=[];
+      for(let i=0;i<n;i++){ const q=gen(); const p=q.prompt.replace(' (give the smaller root)',''); problems.push(`${i+1}. ${p}`); answers.push(`${i+1}. ${q.answer}`); }
+      if(!asPdf){
+        downloadText(`worksheet_${key}_${n}.txt`, `Algebra Worksheet - ${name}\n\n${problems.join('\n')}`);
+        downloadText(`worksheet_${key}_${n}_answers.txt`, `Answer Key - ${name}\n\n${answers.join('\n')}`);
+        return;
+      }
+      if(!window.jspdf){ alert('jsPDF not available yet. Open once online to cache.'); return; }
+      const { jsPDF } = window.jspdf;
+      const mk=(filename,isAnswers=false)=>{
+        const doc=new jsPDF({unit:'pt', format:'letter'});
+        const margin=54; let y=margin; const width=612; const lineH=16;
+        doc.setFont('Helvetica','bold'); doc.setFontSize(16);
+        doc.text(isAnswers? `Answer Key – ${name}` : `Worksheet – ${name}`, margin, y); y+=24;
+        doc.setFont('Helvetica','normal'); doc.setFontSize(12);
+        const arr = isAnswers? problems.map((p,i)=> `${p}    Ans: ${answers[i].split('. ')[1]}`) : problems;
+        for(const line of arr){
+          const wrapped=doc.splitTextToSize(line, width-2*margin);
+          for(const w of wrapped){ if(y>756){ doc.addPage(); y=margin; } doc.text(w, margin, y); y+=lineH; }
+          y+=6;
+        }
+        doc.save(filename);
+      };
+      mk(`worksheet_${key}_${n}.pdf`, false);
+      mk(`worksheet_${key}_${n}_answers.pdf`, true);
+    }
+  </script>
+</body>
+</html>
